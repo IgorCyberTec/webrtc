@@ -140,7 +140,75 @@ async def main():
                             )
     
     #run backwords
+    async def back():
+        await conn.datachannel.pub_sub.publish_request_new(
+                                RTC_TOPIC["SPORT_MOD"], 
+                                {
+                                    "api_id": SPORT_CMD["Move"],
+                                    "parameter": {"x": -0.2, "y": 0, "z": 0}
+                                }
+                            )
+        
+    async def stand():
+        await conn.datachannel.pub_sub.publish_request_new(
+            RTC_TOPIC["MOTION_SWITCHER"], 
+            {
+                "api_id": 1002,
+                "parameter": {"name": "ai"}
+            }
+        )
+        await conn.datachannel.pub_sub.publish_request_new(
+            RTC_TOPIC["SPORT_MOD"], 
+            {
+                "api_id": SPORT_CMD["StandOut"],
+                "parameter": {"data": True}
+            }
+        )
 
+        await asyncio.sleep(5)
+
+        await conn.datachannel.pub_sub.publish_request_new(
+            RTC_TOPIC["SPORT_MOD"], 
+            {
+                "api_id": SPORT_CMD["StandOut"],
+                "parameter": {"data": False}
+            }
+        )
+
+        await conn.datachannel.pub_sub.publish_request_new(
+                        RTC_TOPIC["MOTION_SWITCHER"], 
+                        {
+                            "api_id": 1002,
+                            "parameter": {"name": "normal"}
+                        }
+                    )
+
+    async def flip():
+        await conn.datachannel.pub_sub.publish_request_new(
+            RTC_TOPIC["MOTION_SWITCHER"], 
+            {
+                "api_id": 1002,
+                "parameter": {"name": "ai"}
+            }
+        )
+
+        await conn.datachannel.pub_sub.publish_request_new(
+             RTC_TOPIC["SPORT_MOD"], 
+             {
+                 "api_id": SPORT_CMD["BackFlip"],
+                 "parameter": {"data": True}
+             }
+         )
+        
+        await conn.datachannel.pub_sub.publish_request_new(
+                        RTC_TOPIC["MOTION_SWITCHER"], 
+                        {
+                            "api_id": 1002,
+                            "parameter": {"name": "normal"}
+                        }
+                    )
+
+    
     def run_asyncio_loop(loop):
         asyncio.set_event_loop(loop)
         async def setup():
@@ -219,17 +287,16 @@ async def main():
                         if gesto == "open_hand":
                             asyncio.run_coroutine_threadsafe(run(), loop2)
                             #await asyncio.sleep(3)
-                        '''if gesto == 'closed':
-                            test.SitDown()
+                        if gesto == 'closed':
+                            asyncio.run_coroutine_threadsafe(back(), loop2)
                         if gesto == 'peace':
-                            test.StandDown()
+                            asyncio.run_coroutine_threadsafe(stand(), loop2)
                         if gesto == 'spider':
-                            test.StandUp()
-                        if gesto == 'finger':
-                            test.TurnLeft()
+                            asyncio.run_coroutine_threadsafe(flip(), loop2)
+                        '''if gesto == 'finger':
+                            asyncio.run_coroutine_threadsafe(run(), loop2)
                         if gesto == 'heart':
-                            time.sleep(3.0)
-                            test.Heart()'''
+                            asyncio.run_coroutine_threadsafe(run(), loop2)'''
                         breaked = True
                         breaked_at = time.time()
 
