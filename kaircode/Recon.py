@@ -112,9 +112,9 @@ async def main():
     breaked_at = None
 
     # Choose a connection method (uncomment the correct one)
-    # conn = Go2WebRTCConnection(WebRTCConnectionMethod.LocalSTA, ip="192.168.8.181")
-    # conn = Go2WebRTCConnection(WebRTCConnectionMethod.LocalSTA, serialNumber="B42D2000XXXXXXXX")
-    # conn = Go2WebRTCConnection(WebRTCConnectionMethod.Remote, serialNumber="B42D2000XXXXXXXX", username="email@gmail.com", password="pass")
+    # conn = Go2WebRTCConnection(WebRTCConnectionMethod.LocalSTA, ip="192.168.1.12")
+    # conn = Go2WebRTCConnection(WebRTCConnectionMethod.LocalSTA, serialNumber="B42D20007BCAEG4")
+    # conn = Go2WebRTCConnection(WebRTCConnectionMethod.Remote, serialNumber="B42D20007BCAEG4", username="andre@glededu.com", password="Gie2309$")
     conn = Go2WebRTCConnection(WebRTCConnectionMethod.LocalAP)
     mp_hands = mp.solutions.hands
     hands = mp_hands.Hands(
