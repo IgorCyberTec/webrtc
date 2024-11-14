@@ -17,31 +17,9 @@ import time
 from queue import Queue
 from go2_webrtc_driver.webrtc_driver import Go2WebRTCConnection, WebRTCConnectionMethod
 from aiortc import MediaStreamTrack
-
-import asyncio
-import logging
-import threading
-import time
-from queue import Queue
-from go2_webrtc_driver.webrtc_driver import Go2WebRTCConnection, WebRTCConnectionMethod
-from aiortc import MediaStreamTrack
 import cv2
 import mediapipe as mp
 import numpy as np
-import sys
-import time
-from unitree_sdk2py.core.channel import ChannelFactoryInitialize
-from unitree_sdk2py.core.channel import ChannelSubscriber
-from unitree_sdk2py.idl.default import unitree_go_msg_dds__SportModeState_
-from unitree_sdk2py.idl.unitree_go.msg.dds_ import SportModeState_
-from unitree_sdk2py.go2.video.video_client import VideoClient
-from unitree_sdk2py.go2.sport.sport_client import (
-    SportClient,
-    PathPoint,
-    SPORT_PATH_POINT_SIZE,
-)
-import math
-import time
 
 # Inicialização do MediaPipe Hands
 mp_hands = mp.solutions.hands
