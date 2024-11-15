@@ -1,4 +1,4 @@
-# Full Unitree Go2 WebRTC Driver
+# Go2 WebRTC
 
 This repository contains a Python implementation of the WebRTC driver to connect to the Unitree Go2 Robot. WebRTC is used by the Unitree Go APP and provides high-level control through it. Therefore, no jailbreak or firmware manipulation is required. It works out of the box for Go2 AIR/PRO/EDU models.
 
@@ -58,7 +58,7 @@ cd ~
 sudo apt update
 sudo apt install python3-pip
 sudo apt install portaudio19-dev
-git clone --recurse-submodules https://github.com/legion1581/go2_webrtc_connect.git
+git clone --recurse-submodules https://github.com/IgorCyberTec/webrtc.git
 cd go2_webrtc_connect
 pip install -e .
 ```
@@ -70,11 +70,3 @@ Example programs are located in the /example directory.
 
 A big thank you to TheRoboVerse community! Visit us at [TheRoboVerse](https://theroboverse.com) for more information and support.
 
-Special thanks to the [tfoldi WebRTC project](https://github.com/tfoldi/go2-webrtc) and [abizovnuralem](https://github.com/abizovnuralem) for adding LiDAR support!
-
- 
-### Support
-
-If you like this project, please consider buying me a coffee:
-
-<a href="https://www.buymeacoffee.com/legion1581" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
