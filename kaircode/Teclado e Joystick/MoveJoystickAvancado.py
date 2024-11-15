@@ -4,13 +4,17 @@ import pygame
 from time import time
 from go2_webrtc_driver.constants import RTC_TOPIC, SPORT_CMD
 from go2_webrtc_driver.webrtc_driver import Go2WebRTCConnection, WebRTCConnectionMethod
-
+import ctypes
 # Configuração da conexão WebRTC
 conn = Go2WebRTCConnection(WebRTCConnectionMethod.LocalAP)
 
 # Inicializar suporte ao joystick
 pygame.init()
 pygame.joystick.init()
+screen = pygame.display.set_mode((0, 0), pygame.NOFRAME)  # Sem bordas, com transparência
+pygame.display.set_caption("Janela Transparente")
+hwnd = pygame.display.get_wm_info()["window"]
+
 joystick = pygame.joystick.Joystick(0)  # Primeiro controle conectado
 joystick.init()
 
@@ -27,6 +31,14 @@ async def send_command(api_id, parameter=None):
         RTC_TOPIC["SPORT_MOD"],
         {"api_id": api_id, "parameter": parameter if parameter else {}}
     )
+
+async def send_data(api_id, parameter=None):
+    print(f"Enviando comando: {api_id}, com parâmetros: {parameter}")
+    await conn.datachannel.pub_sub.publish_request_new(
+        api_id, parameter
+    )
+    threading.Timer(2, reset_is_executing_action).start()
+
 
 # Função para mover o dispositivo
 async def move_device(x, y, z):
@@ -55,6 +67,7 @@ action_durations = {
 def send_action_command(api_id):
     global is_executing_action
     if is_executing_action:
+        print(api_id)
         print("Já existe uma ação em execução. Aguarde antes de enviar outro comando.")
         return
     is_executing_action = True
@@ -69,7 +82,7 @@ def update_is_moving():
 
 # Função para lidar com eventos do joystick
 def handle_joystick_events():
-    global movement_active, movement_tasks, is_moving, is_executing_action
+    global movement_active, movement_tasks, is_moving, is_executing_action, ai
     # Movimentos contínuos baseados nos eixos analógicos
     axis_forward = joystick.get_axis(1)  # Eixo Y do analógico esquerdo
     axis_rotation = joystick.get_axis(0)  # Eixo X do analógico esquerdo
@@ -140,21 +153,39 @@ def handle_joystick_events():
     rb_pressed = joystick.get_button(5)  # RB
     lt_value = joystick.get_axis(2)  # LT
     rt_value = joystick.get_axis(5)  # RT
+    hat_state = joystick.get_hat(0) 
 
-    if lb_pressed:
-        send_action_command(SPORT_CMD["MoonWalk"])  # Comando para LB
-    if rb_pressed:
-        send_action_command(SPORT_CMD["Handstand"])  # Comando para RB
-    if lt_value > 0.5:
-        send_action_command(SPORT_CMD["FrontFlip"])  # Comando para LT pressionado
-    if rt_value > 0.5:
-        send_action_command(SPORT_CMD["BackFlip"])  # Comando para RT pressionado
+    if lb_pressed and rb_pressed and hat_state == (0, -1):
+        send_action_command(SPORT_CMD["OnesidedStep"])  # Comando para LB + RB
+    elif lb_pressed and joystick.get_button(2) and hat_state == (0, -1):
+        send_action_command(SPORT_CMD["Hello"])  # Comando para LB + B
     
+import json
 
 # Loop asyncio em um thread separado
+init = 'normal'
 def run_asyncio_loop():
     async def setup():
         await conn.connect()
+        response = await conn.datachannel.pub_sub.publish_request_new(
+                    RTC_TOPIC["MOTION_SWITCHER"], 
+                    {"api_id": 1001}
+                )
+
+        if response['data']['header']['status']['code'] == 0:
+            data = json.loads(response['data']['data'])
+            current_motion_switcher_mode = data['name']
+            print(f"Current motion mode: {current_motion_switcher_mode}")
+        if current_motion_switcher_mode != init:
+            print(f"Switching motion mode from {current_motion_switcher_mode} to '{init}'...")
+            await conn.datachannel.pub_sub.publish_request_new(
+                RTC_TOPIC["MOTION_SWITCHER"], 
+                {
+                    "api_id": 1002,
+                    "parameter": {"name": init}
+                }
+            )
+            await asyncio.sleep(5) 
     loop.run_until_complete(setup())
     loop.run_forever()
 
@@ -177,6 +208,7 @@ try:
 
         # Lidar com eventos do joystick
         handle_joystick_events()
+        pygame.display.update()
 
 finally:
     # Encerrando o loop asyncio e o Pygame
