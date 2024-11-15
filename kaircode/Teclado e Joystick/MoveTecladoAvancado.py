@@ -47,12 +47,12 @@ def handle_key_events(event):
         if event.key == pygame.K_a and not movement_active["a"]:
             movement_active["a"] = True
             movement_tasks["a"] = asyncio.run_coroutine_threadsafe(
-                continuous_movement("a", 0, 0, 1), loop  # Rotação para a esquerda
+                continuous_movement("a", 0, 0, -1), loop  # Rotação para a esquerda
             )
         if event.key == pygame.K_d and not movement_active["d"]:
             movement_active["d"] = True
             movement_tasks["d"] = asyncio.run_coroutine_threadsafe(
-                continuous_movement("d", 0, 0, -1), loop  # Rotação para a direita
+                continuous_movement("d", 0, 0, 1), loop  # Rotação para a direita
             )
 
         # Ações especiais (pressione as teclas para executar)
