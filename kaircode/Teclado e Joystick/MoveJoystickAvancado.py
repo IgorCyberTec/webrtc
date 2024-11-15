@@ -1,10 +1,11 @@
 import asyncio
 import threading
 import pygame
+from time import time
 from go2_webrtc_driver.constants import RTC_TOPIC, SPORT_CMD
 from go2_webrtc_driver.webrtc_driver import Go2WebRTCConnection, WebRTCConnectionMethod
 
-# Conexão WebRTC
+# Configuração da conexão WebRTC
 conn = Go2WebRTCConnection(WebRTCConnectionMethod.LocalAP)
 
 # Inicializar suporte ao joystick
@@ -13,114 +14,147 @@ pygame.joystick.init()
 joystick = pygame.joystick.Joystick(0)  # Primeiro controle conectado
 joystick.init()
 
-# Estados de movimento e ação
+# Estados
+movement_active = {"forward": False, "backward": False, "rotate_left": False, "rotate_right": False}
+movement_tasks = {}
 is_moving = False  # Indica se o robô está se movendo
 is_executing_action = False  # Indica se o robô está executando uma ação
-is_action_pending = False  # Impede ações simultâneas
-last_command = {"x": 0, "y": 0, "z": 0}  # Último comando enviado
-
-# Fila para comandos assíncronos
-command_queue = asyncio.Queue()
 
 # Função para enviar comandos
 async def send_command(api_id, parameter=None):
-    try:
-        print(f"Enviando comando: {api_id}, parâmetros: {parameter}")
-        await conn.datachannel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": api_id, "parameter": parameter if parameter else {}}
-        )
-    except Exception as e:
-        print(f"Erro ao enviar comando: {e}")
+    print(f"Enviando comando: {api_id}, com parâmetros: {parameter}")
+    await conn.datachannel.pub_sub.publish_request_new(
+        RTC_TOPIC["SPORT_MOD"],
+        {"api_id": api_id, "parameter": parameter if parameter else {}}
+    )
 
 # Função para mover o dispositivo
 async def move_device(x, y, z):
     await send_command(SPORT_CMD["Move"], {"x": x, "y": y, "z": z})
 
-# Consumidor da fila de comandos
-async def process_command_queue():
-    while True:
-        command = await command_queue.get()
-        await command
-        command_queue.task_done()
+# Função de movimento contínuo
+async def continuous_movement(direction, x, y, z):
+    while movement_active[direction]:
+        await move_device(x, y, z)
 
 # Função para redefinir o estado de execução de ação
 def reset_is_executing_action():
-    global is_executing_action, is_action_pending
+    global is_executing_action
     is_executing_action = False
-    is_action_pending = False
+    print("Ação concluída. Pronto para o próximo comando.")
 
-# Função para enviar comandos de movimento
-def send_movement_command(x, y, z):
-    """Envia um comando de movimento somente se ele for diferente do último."""
-    global last_command
-    new_command = {"x": x, "y": y, "z": z}
-    # Envia o comando apenas se for diferente do último
-    if new_command != last_command:
-        asyncio.run_coroutine_threadsafe(
-            command_queue.put(move_device(x, y, z)), loop
-        )
-        last_command = new_command  # Atualiza o último comando enviado
+# Dicionário de durações das ações
+action_durations = {
+    SPORT_CMD["StandUp"]: 1.0,
+    SPORT_CMD["Sit"]: 1.0,
+    SPORT_CMD["WiggleHips"]: 5.0,
+    SPORT_CMD["Dance1"]: 10.0,
+}
 
-# Função para parar o movimento
-def stop_movement():
-    """Para o movimento do robô somente se necessário."""
-    global is_moving, last_command
-    # Verifica se o último comando enviado já era de parar
-    if last_command != {"x": 0, "y": 0, "z": 0}:
-        send_movement_command(0, 0, 0)  # Envia comando de parar
-        is_moving = False
+# Função para enviar comandos de ação
+def send_action_command(api_id):
+    global is_executing_action
+    if is_executing_action:
+        print("Já existe uma ação em execução. Aguarde antes de enviar outro comando.")
+        return
+    is_executing_action = True
+    asyncio.run_coroutine_threadsafe(send_command(api_id), loop)
+    duration = action_durations.get(api_id, 2.0)
+    threading.Timer(duration, reset_is_executing_action).start()
+
+# Função para atualizar o estado de movimento
+def update_is_moving():
+    global is_moving
+    is_moving = any(movement_active.values())
 
 # Função para lidar com eventos do joystick
 def handle_joystick_events():
-    """Lida com eventos do joystick e controla o movimento do robô."""
-    global is_moving, is_executing_action
+    global movement_active, movement_tasks, is_moving, is_executing_action
+    # Movimentos contínuos baseados nos eixos analógicos
+    axis_forward = joystick.get_axis(1)  # Eixo Y do analógico esquerdo
+    axis_rotation = joystick.get_axis(0)  # Eixo X do analógico esquerdo
 
-    axis_forward_back = joystick.get_axis(1)
-    axis_left_right = joystick.get_axis(0)
-    axis_rotation = joystick.get_axis(3)
+    axis_right_x = joystick.get_axis(2)  # Eixo X do analógico direito
+    axis_right_y = joystick.get_axis(3)  
 
-    if abs(axis_forward_back) <= 0.2 and abs(axis_left_right) <= 0.2 and abs(axis_rotation) <= 0.2:
-        stop_movement()
-        return
+    # Movimento para frente
+    if axis_forward < -0.1 and not is_executing_action:
+        if not movement_active["forward"]:
+            movement_active["forward"] = True
+            movement_tasks["forward"] = asyncio.run_coroutine_threadsafe(
+                continuous_movement("forward", 1, 0, 0), loop
+            )
+    else:
+        if movement_active["forward"]:
+            movement_active["forward"] = False
 
-    if abs(axis_forward_back) > 0.2 and not is_executing_action:
-        send_movement_command(-axis_forward_back * 0.5, 0, 0)
-        is_moving = True
+    # Movimento para trás
+    if axis_forward > 0.1 and not is_executing_action:
+        if not movement_active["backward"]:
+            movement_active["backward"] = True
+            movement_tasks["backward"] = asyncio.run_coroutine_threadsafe(
+                continuous_movement("backward", -1, 0, 0), loop
+            )
+    else:
+        if movement_active["backward"]:
+            movement_active["backward"] = False
 
-    if abs(axis_left_right) > 0.2 and not is_executing_action:
-        send_movement_command(0, axis_left_right * 0.5, 0)
-        is_moving = True
+    # Rotação para a esquerda
+    if axis_right_y < -0.1 and not is_executing_action:
+        if not movement_active["rotate_left"]:
+            movement_active["rotate_left"] = True
+            movement_tasks["rotate_left"] = asyncio.run_coroutine_threadsafe(
+                continuous_movement("rotate_left", 0, 0, 1), loop
+            )
+    else:
+        if movement_active["rotate_left"]:
+            movement_active["rotate_left"] = False
 
-    if abs(axis_rotation) > 0.2 and not is_executing_action:
-        send_movement_command(0, 0, axis_rotation * 0.5)
-        is_moving = True
+    # Rotação para a direita
+    if axis_right_y > 0.1 and not is_executing_action:
+        if not movement_active["rotate_right"]:
+            movement_active["rotate_right"] = True
+            movement_tasks["rotate_right"] = asyncio.run_coroutine_threadsafe(
+                continuous_movement("rotate_right", 0, 0, -1), loop
+            )
+    else:
+        if movement_active["rotate_right"]:
+            movement_active["rotate_right"] = False
 
+    # Atualizar estado de movimento
+    update_is_moving()
+
+    # Ações específicas para botões
     if not is_moving and not is_executing_action:
-        if joystick.get_button(0):
+        if joystick.get_button(0):  # Botão A
             send_action_command(SPORT_CMD["StandUp"])
-        elif joystick.get_button(1):
-            send_action_command(SPORT_CMD["Sit"])
-        elif joystick.get_button(2):
+        if joystick.get_button(1):  # Botão B
+            send_action_command(SPORT_CMD["StandDown"])
+        if joystick.get_button(2):  # Botão X
             send_action_command(SPORT_CMD["WiggleHips"])
-        elif joystick.get_button(3):
-            send_action_command(SPORT_CMD["Dance1"])
+        elif joystick.get_button(3):  # Botão Y
+            send_action_command(SPORT_CMD["FingerHeart"])
 
-def send_action_command(api_id):
-    global is_executing_action, is_action_pending
-    if not is_action_pending:
-        is_executing_action = True
-        is_action_pending = True
-        asyncio.run_coroutine_threadsafe(
-            command_queue.put(send_command(api_id)), loop
-        )
-        duration = {"StandUp": 3.0, "Sit": 3.0, "WiggleHips": 5.0, "Dance1": 10.0}.get(api_id, 2.0)
-        threading.Timer(duration, reset_is_executing_action).start()
+    # Adicionar comandos para LB, RB, LT e RT
+    lb_pressed = joystick.get_button(4)  # LB
+    rb_pressed = joystick.get_button(5)  # RB
+    lt_value = joystick.get_axis(2)  # LT
+    rt_value = joystick.get_axis(5)  # RT
 
+    if lb_pressed:
+        send_action_command(SPORT_CMD["MoonWalk"])  # Comando para LB
+    if rb_pressed:
+        send_action_command(SPORT_CMD["Handstand"])  # Comando para RB
+    if lt_value > 0.5:
+        send_action_command(SPORT_CMD["FrontFlip"])  # Comando para LT pressionado
+    if rt_value > 0.5:
+        send_action_command(SPORT_CMD["BackFlip"])  # Comando para RT pressionado
+    
+
+# Loop asyncio em um thread separado
 def run_asyncio_loop():
     async def setup():
         await conn.connect()
-        asyncio.create_task(process_command_queue())
     loop.run_until_complete(setup())
     loop.run_forever()
 
@@ -128,9 +162,11 @@ loop = asyncio.new_event_loop()
 asyncio_thread = threading.Thread(target=run_asyncio_loop, daemon=True)
 asyncio_thread.start()
 
+# Inicialização do Pygame
 screen = pygame.display.set_mode((400, 300))
 pygame.display.set_caption("Controlador do Dispositivo")
 
+# Loop principal
 running = True
 try:
     while running:
@@ -139,9 +175,13 @@ try:
                 running = False
                 break
 
+        # Lidar com eventos do joystick
         handle_joystick_events()
 
 finally:
+    # Encerrando o loop asyncio e o Pygame
     loop.call_soon_threadsafe(loop.stop)
-    asyncio.run(asyncio.sleep(0.1))
+    async def wait_for_loop():
+        await asyncio.sleep(1)
+    asyncio.run(wait_for_loop())
     pygame.quit()
