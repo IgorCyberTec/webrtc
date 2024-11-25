@@ -7,9 +7,6 @@ img = np.zeros((height, width, 3), dtype=np.uint8)
 cv2.imshow('Video', img)
 cv2.waitKey(1)  # Ensure the window is created
 
-import json
-
-from go2_webrtc_driver.constants import RTC_TOPIC, SPORT_CMD
 import asyncio
 import logging
 import threading
@@ -18,128 +15,25 @@ from queue import Queue
 from go2_webrtc_driver.webrtc_driver import Go2WebRTCConnection, WebRTCConnectionMethod
 from aiortc import MediaStreamTrack
 
-import asyncio
-import logging
-import threading
-import time
-from queue import Queue
-from go2_webrtc_driver.webrtc_driver import Go2WebRTCConnection, WebRTCConnectionMethod
-from aiortc import MediaStreamTrack
-import cv2
-import mediapipe as mp
-import numpy as np
-import sys
-import time
-from unitree_sdk2py.core.channel import ChannelFactoryInitialize
-from unitree_sdk2py.core.channel import ChannelSubscriber
-from unitree_sdk2py.idl.default import unitree_go_msg_dds__SportModeState_
-from unitree_sdk2py.idl.unitree_go.msg.dds_ import SportModeState_
-from unitree_sdk2py.go2.video.video_client import VideoClient
-from unitree_sdk2py.go2.sport.sport_client import (
-    SportClient,
-    PathPoint,
-    SPORT_PATH_POINT_SIZE,
-)
-import math
-import time
-
-# Inicialização do MediaPipe Hands
-mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(max_num_hands=2)
-mp_draw = mp.solutions.drawing_utils
-
-def normalizar_pontos(landmarks):
-    # Centraliza e normaliza os pontos
-    pontos = np.array([[lm.x, lm.y, lm.z] for lm in landmarks])
-    centro = pontos[0]  # Ponto do punho
-    pontos -= centro
-    escala = np.linalg.norm(pontos, axis=1).max()
-    pontos /= escala
-    return pontos
-
-def detectar_gesto(pontos):
-    # Cálculo dos ângulos ou distâncias relevantes
-    # Exemplo simplificado para detectar mão aberta
-    dedos_estendidos = []
-    margem = 0.1  # Margem de erro de 10%
-    for id in [8, 12, 16, 20]:  # Pontas dos dedos
-        # Verifica se o dedo está estendido
-        if pontos[id][1] < (pontos[id - 2][1] * (1 + margem)):
-            dedos_estendidos.append(True)
-        else:
-            dedos_estendidos.append(False)
-    # Verifica o polegar
-    if pontos[4][0] > (pontos[3][0] * (1 - margem)):
-        dedos_estendidos.append(True)
-    else:
-        dedos_estendidos.append(False)
-
-    # Reconhecimento dos gestos
-    if all(dedos_estendidos):
-        return 'open_hand'
-    if dedos_estendidos[0] and dedos_estendidos[1] and not any(dedos_estendidos[2:]):
-        return 'peace'
-    if dedos_estendidos[0] and not any(dedos_estendidos[1:]):
-        return 'finger'
-    if dedos_estendidos[0] and dedos_estendidos[3] and not any([dedos_estendidos[1], dedos_estendidos[2], dedos_estendidos[4]]):
-        return 'rock'
-    if dedos_estendidos[4] and dedos_estendidos[0] and not any([dedos_estendidos[1], dedos_estendidos[2], dedos_estendidos[3]]):
-        return 'heart'
-    if dedos_estendidos[1] and not any([dedos_estendidos[0], dedos_estendidos[2], dedos_estendidos[3], dedos_estendidos[4]]):
-        return 'middle'
-    if dedos_estendidos[0] and dedos_estendidos[3] and dedos_estendidos[4] and not any([dedos_estendidos[1], dedos_estendidos[2]]):
-        return 'spider'
-    if dedos_estendidos[0] and dedos_estendidos[1] and dedos_estendidos[3] and not any([dedos_estendidos[2], dedos_estendidos[4]]):
-        return 'stranger'
-    if dedos_estendidos[0] and dedos_estendidos[1] and dedos_estendidos[3] and not any([dedos_estendidos[2], dedos_estendidos[4]]):
-        return 'stranger'
-    if not any(dedos_estendidos):
-        return 'closed'
-    return 'none'
-
 # Enable logging for debugging
 logging.basicConfig(level=logging.FATAL)
 
-
-BREAK_TIME_OUT = 1.0  # Tempo em segundos
-
-# Enable logging for debugging
-logging.basicConfig(level=logging.FATAL)
-
-async def main():
+def main():
     frame_queue = Queue()
-    breaked = False  # Flag para prevenir ações repetidas
-    breaked_at = None
 
     # Choose a connection method (uncomment the correct one)
     # conn = Go2WebRTCConnection(WebRTCConnectionMethod.LocalSTA, ip="192.168.8.181")
     # conn = Go2WebRTCConnection(WebRTCConnectionMethod.LocalSTA, serialNumber="B42D2000XXXXXXXX")
     # conn = Go2WebRTCConnection(WebRTCConnectionMethod.Remote, serialNumber="B42D2000XXXXXXXX", username="email@gmail.com", password="pass")
     conn = Go2WebRTCConnection(WebRTCConnectionMethod.LocalAP)
-    mp_hands = mp.solutions.hands
-    hands = mp_hands.Hands(
-        min_detection_confidence=0.7, min_tracking_confidence=0.7, max_num_hands=1
-    )
+
     # Async function to receive video frames and put them in the queue
     async def recv_camera_stream(track: MediaStreamTrack):
-
         while True:
             frame = await track.recv()
             # Convert the frame to a NumPy array
             img = frame.to_ndarray(format="bgr24")
             frame_queue.put(img)
-
-    # Movimento comando
-    async def run():
-        await conn.datachannel.pub_sub.publish_request_new(
-                                RTC_TOPIC["SPORT_MOD"], 
-                                {
-                                    "api_id": SPORT_CMD["Move"],
-                                    "parameter": {"x": 0.2, "y": 0, "z": 0}
-                                }
-                            )
-    
-    #run backwords
 
     def run_asyncio_loop(loop):
         asyncio.set_event_loop(loop)
@@ -147,29 +41,6 @@ async def main():
             try:
                 # Connect to the device
                 await conn.connect()
-                response = await conn.datachannel.pub_sub.publish_request_new(
-                    RTC_TOPIC["MOTION_SWITCHER"], 
-                    {"api_id": 1001}
-                )
-
-                if response['data']['header']['status']['code'] == 0:
-                    data = json.loads(response['data']['data'])
-                    current_motion_switcher_mode = data['name']
-                    print(f"Current motion mode: {current_motion_switcher_mode}")
-
-                # Switch to "normal" mode if not already
-                if current_motion_switcher_mode != "normal":
-                    print(f"Switching motion mode from {current_motion_switcher_mode} to 'normal'...")
-                    await conn.datachannel.pub_sub.publish_request_new(
-                        RTC_TOPIC["MOTION_SWITCHER"], 
-                        {
-                            "api_id": 1002,
-                            "parameter": {"name": "normal"}
-                        }
-                    )
-                    await asyncio.sleep(5)  # Wait while it stands up
-
-
 
                 # Switch video channel on and start receiving video frames
                 conn.video.switchVideoChannel(True)
@@ -189,68 +60,24 @@ async def main():
     # Start the asyncio event loop in a separate thread
     asyncio_thread = threading.Thread(target=run_asyncio_loop, args=(loop,))
     asyncio_thread.start()
-    # Start the asyncio event loop in a separate thread
 
-    loop2 = asyncio.new_event_loop()
-    th = threading.Thread(target=loop2.run_forever)
-    th.start()
     try:
         while True:
             if not frame_queue.empty():
                 img = frame_queue.get()
                 print(f"Shape: {img.shape}, Dimensions: {img.ndim}, Type: {img.dtype}, Size: {img.size}")
                 # Display the frame
-                image_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                results = hands.process(image_rgb)
-
-                print(breaked)
-                if breaked and time.time() - breaked_at > 1:
-                    breaked = False
-                    
-                # Desenhar landmarks da mão detectada e executar ações
-                if results.multi_hand_landmarks:
-                    for hand_landmarks in results.multi_hand_landmarks:
-                        mp.solutions.drawing_utils.draw_landmarks(
-                            img, hand_landmarks, mp_hands.HAND_CONNECTIONS
-                        )
-                        pontos = normalizar_pontos(hand_landmarks.landmark)
-                        gesto = detectar_gesto(pontos)
-                        #print(gesto)
-                        if gesto == "open_hand":
-                            asyncio.run_coroutine_threadsafe(run(), loop2)
-                            #await asyncio.sleep(3)
-                        '''if gesto == 'closed':
-                            test.SitDown()
-                        if gesto == 'peace':
-                            test.StandDown()
-                        if gesto == 'spider':
-                            test.StandUp()
-                        if gesto == 'finger':
-                            test.TurnLeft()
-                        if gesto == 'heart':
-                            time.sleep(3.0)
-                            test.Heart()'''
-                        breaked = True
-                        breaked_at = time.time()
-
                 cv2.imshow('Video', img)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
             else:
                 # Sleep briefly to prevent high CPU usage
                 time.sleep(0.01)
-
-        print("----------------------------- saiu do loop")
     finally:
-        print("-----------------------------  safe")
-
         cv2.destroyAllWindows()
         # Stop the asyncio event loop
         loop.call_soon_threadsafe(loop.stop)
-        loop2.call_soon_threadsafe(loop2.stop)
         asyncio_thread.join()
-        th.join()
-
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
