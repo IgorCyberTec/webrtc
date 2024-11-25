@@ -3,10 +3,6 @@ import threading
 import asyncio
 from go2_webrtc_driver.constants import RTC_TOPIC
 from go2_webrtc_driver.webrtc_driver import Go2WebRTCConnection, WebRTCConnectionMethod
-from aiortc import MediaStreamTrack
-from queue import Queue
-import cv2
-import numpy as np
 import json
 import subprocess
 import os
@@ -24,9 +20,6 @@ asyncio_thread.start()
 # Variáveis para armazenar os processos dos scripts
 recon_process = None
 joystick_process = None  # Processo para o MoveJoystickAvancado.py
-
-# Variável para armazenar o frame de vídeo atual
-frame_queue = Queue()
 
 # Função para enviar comandos
 async def send_command(api_id, parameter=None):
@@ -61,6 +54,7 @@ def connect():
 async def connect_robot():
     try:
         await conn.connect()
+        # Configuração inicial do robô
         response = await conn.datachannel.pub_sub.publish_request_new(
             RTC_TOPIC["MOTION_SWITCHER"],
             {"api_id": 1001}
@@ -97,59 +91,56 @@ def action():
 def toggle_recon():
     global recon_process
     if recon_process is None or recon_process.poll() is not None:
+        # Iniciar o Recon.py
         script_path = os.path.abspath("Recon.py")
         recon_process = subprocess.Popen(["python3", script_path])
         status = "Reconhecimento de Gestos Ativado"
     else:
+        # Parar o Recon.py
         recon_process.terminate()
         recon_process.wait()
         recon_process = None
         status = "Reconhecimento de Gestos Desativado"
     return jsonify({"status": status})
 
+# Novo endpoint para ativar/desativar o MoveJoystickAvancado.py
 @app.route('/toggle_joystick', methods=['POST'])
 def toggle_joystick():
     global joystick_process
     if joystick_process is None or joystick_process.poll() is not None:
+        # Iniciar o MoveJoystickAvancado.py
         script_path = os.path.abspath("kaircode/Teclado e Joystick/MoveJoystickAvancado.py")
         joystick_process = subprocess.Popen(["python3", script_path])
         status = "Controle Xbox Ativado"
     else:
+        # Parar o MoveJoystickAvancado.py
         joystick_process.terminate()
         joystick_process.wait()
         joystick_process = None
         status = "Controle Xbox Desativado"
     return jsonify({"status": status})
 
-@app.route('/video_feed')
-def video_feed():
-    def generate():
-        while True:
-            if not frame_queue.empty():
-                frame = frame_queue.get()
-                _, buffer = cv2.imencode('.jpg', frame)
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-def setup_video_stream():
-    async def recv_camera_stream(track: MediaStreamTrack):
-        while True:
-            frame = await track.recv()
-            img = frame.to_ndarray(format="bgr24")
-            frame_queue.put(img)
-
-    async def setup():
-        try:
-            await conn.connect()
-            conn.video.switchVideoChannel(True)
-            conn.video.add_track_callback(recv_camera_stream)
-        except Exception as e:
-            print(f"Erro ao configurar o vídeo: {e}")
-
-    asyncio.run_coroutine_threadsafe(setup(), loop)
-
-setup_video_stream()
+@app.route('/shutdown')
+def shutdown():
+    global recon_process
+    global joystick_process
+    # Encerrar o Recon.py se estiver em execução
+    if recon_process:
+        recon_process.terminate()
+        recon_process.wait()
+        recon_process = None
+    # Encerrar o MoveJoystickAvancado.py se estiver em execução
+    if joystick_process:
+        joystick_process.terminate()
+        joystick_process.wait()
+        joystick_process = None
+    # Encerrar o loop asyncio
+    loop.call_soon_threadsafe(loop.stop)
+    asyncio_thread.join()
+    func = request.environ.get('werkzeug.server.shutdown')
+    if func:
+        func()
+    return 'Servidor desligado.'
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
