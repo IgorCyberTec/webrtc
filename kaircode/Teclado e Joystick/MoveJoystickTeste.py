@@ -20,6 +20,12 @@ hwnd = pygame.display.get_wm_info()["window"]
 joystick = pygame.joystick.Joystick(0)  # Primeiro controle conectado
 joystick.init()
 
+# Debugging: Informações sobre o joystick
+print(f"Joystick conectado: {joystick.get_name()}")
+print(f"Número de eixos: {joystick.get_numaxes()}")
+for i in range(joystick.get_numaxes()):
+    print(f"Eixo {i}: {joystick.get_axis(i)}")
+
 # Estados
 movement_active = {"forward": False, "backward": False, "rotate_left": False, "rotate_right": False}
 movement_tasks = {}
@@ -49,6 +55,7 @@ async def move_device(x, y, z):
 async def continuous_movement(direction, x, y, z):
     while movement_active[direction]:
         await move_device(x, y, z)
+        await asyncio.sleep(0.1)  # Adicionar um pequeno delay para evitar sobrecarga
 
 # Função para redefinir o estado de execução de ação
 def reset_is_executing_action():
@@ -136,24 +143,72 @@ def handle_joystick_events():
         if movement_active["rotate_right"]:
             movement_active["rotate_right"] = False
 
+    # Controle adicional via Trackpad do PS4
+    num_axes = joystick.get_numaxes()
+    if num_axes > 6:
+        trackpad_x = joystick.get_axis(6)  # Eixo X do trackpad
+        trackpad_y = joystick.get_axis(7)  # Eixo Y do trackpad
+
+        # Movimentos baseados no Trackpad
+        if trackpad_y < -0.1:
+            if not movement_active["forward"]:
+                movement_active["forward"] = True
+                movement_tasks["forward"] = asyncio.run_coroutine_threadsafe(
+                    continuous_movement("forward", 1, 0, 0), loop
+                )
+        else:
+            if movement_active["forward"]:
+                movement_active["forward"] = False
+
+        if trackpad_y > 0.1:
+            if not movement_active["backward"]:
+                movement_active["backward"] = True
+                movement_tasks["backward"] = asyncio.run_coroutine_threadsafe(
+                    continuous_movement("backward", -1, 0, 0), loop
+                )
+        else:
+            if movement_active["backward"]:
+                movement_active["backward"] = False
+
+        if trackpad_x < -0.1:
+            if not movement_active["rotate_left"]:
+                movement_active["rotate_left"] = True
+                movement_tasks["rotate_left"] = asyncio.run_coroutine_threadsafe(
+                    continuous_movement("rotate_left", 0, 0, 1), loop
+                )
+        else:
+            if movement_active["rotate_left"]:
+                movement_active["rotate_left"] = False
+
+        if trackpad_x > 0.1:
+            if not movement_active["rotate_right"]:
+                movement_active["rotate_right"] = True
+                movement_tasks["rotate_right"] = asyncio.run_coroutine_threadsafe(
+                    continuous_movement("rotate_right", 0, 0, -1), loop
+                )
+        else:
+            if movement_active["rotate_right"]:
+                movement_active["rotate_right"] = False
+
     # Atualizar estado de movimento
     update_is_moving()
 
     # Ações específicas para botões - Não bloqueiam o movimento
-    if joystick.get_button(0):  # Botão A
+    # Mapeamento de botões do PS4
+    if joystick.get_button(0):  # Botão Square (Equivalente ao A do Xbox)
         send_action_command(SPORT_CMD["StandUp"])
-    if joystick.get_button(1):  # Botão B
+    if joystick.get_button(1):  # Botão X (Equivalente ao B do Xbox)
         send_action_command(SPORT_CMD["StandDown"])
-    if joystick.get_button(2):  # Botão X
+    if joystick.get_button(2):  # Botão Circle (Equivalente ao X do Xbox)
         send_action_command(SPORT_CMD["WiggleHips"])
-    if joystick.get_button(3):  # Botão Y
+    if joystick.get_button(3):  # Botão Triangle (Equivalente ao Y do Xbox)
         send_action_command(SPORT_CMD["FingerHeart"])
 
-    # Adicionar comandos para LB, RB, LT e RT
-    lb_pressed = joystick.get_button(4)  # LB
-    rb_pressed = joystick.get_button(5)  # RB
-    lt_value = joystick.get_axis(2)  # LT
-    rt_value = joystick.get_axis(5)  # RT
+    # Adicionar comandos para L1, R1, L2, R2 se necessário
+    lb_pressed = joystick.get_button(4)  # L1
+    rb_pressed = joystick.get_button(5)  # R1
+    lt_value = joystick.get_axis(2)  # L2
+    rt_value = joystick.get_axis(5)  # R2
     hat_state = joystick.get_hat(0)  # Setas
 
     if hat_state == (0, -1):  # Seta para baixo
@@ -169,27 +224,34 @@ def handle_joystick_events():
 init = 'normal'
 def run_asyncio_loop():
     async def setup():
-        await conn.connect()
-        response = await conn.datachannel.pub_sub.publish_request_new(
-            RTC_TOPIC["MOTION_SWITCHER"], 
-            {"api_id": 1001}
-        )
-
-        if response['data']['header']['status']['code'] == 0:
-            data = json.loads(response['data']['data'])
-            current_motion_switcher_mode = data['name']
-            print(f"Current motion mode: {current_motion_switcher_mode}")
-        if current_motion_switcher_mode != init:
-            print(f"Switching motion mode from {current_motion_switcher_mode} to '{init}'...")
-            await conn.datachannel.pub_sub.publish_request_new(
+        try:
+            await conn.connect()
+            response = await conn.datachannel.pub_sub.publish_request_new(
                 RTC_TOPIC["MOTION_SWITCHER"], 
-                {
-                    "api_id": 1002,
-                    "parameter": {"name": init}
-                }
+                {"api_id": 1001}
             )
-            await asyncio.sleep(5)
-    loop.run_until_complete(setup())
+
+            if response['data']['header']['status']['code'] == 0:
+                data = json.loads(response['data']['data'])
+                current_motion_switcher_mode = data['name']
+                print(f"Current motion mode: {current_motion_switcher_mode}")
+            if current_motion_switcher_mode != init:
+                print(f"Switching motion mode from {current_motion_switcher_mode} to '{init}'...")
+                await conn.datachannel.pub_sub.publish_request_new(
+                    RTC_TOPIC["MOTION_SWITCHER"], 
+                    {
+                        "api_id": 1002,
+                        "parameter": {"name": init}
+                    }
+                )
+                await asyncio.sleep(5)
+        except Exception as e:
+            print(f"Erro durante a configuração do WebRTC: {e}")
+
+    try:
+        loop.run_until_complete(setup())
+    except Exception as e:
+        print(f"Erro ao executar setup: {e}")
     loop.run_forever()
 
 loop = asyncio.new_event_loop()
@@ -216,7 +278,9 @@ try:
 finally:
     # Encerrando o loop asyncio e o Pygame
     loop.call_soon_threadsafe(loop.stop)
-    async def wait_for_loop():
-        await asyncio.sleep(1)
-    asyncio.run(wait_for_loop())
+    # Aguardar o encerramento do loop
+    try:
+        asyncio.run_coroutine_threadsafe(loop.shutdown_asyncgens(), loop).result()
+    except Exception as e:
+        print(f"Erro durante o shutdown do loop: {e}")
     pygame.quit()
