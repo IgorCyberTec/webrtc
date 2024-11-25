@@ -728,3 +728,5 @@ if __name__ == "__main__":
         asyncio_thread.join()
         pygame.quit()
         logging.info("Programa encerrado.")
+
+# tensorboard --logdir=./ppo_robot_tensorboard/
