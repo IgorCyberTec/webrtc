@@ -10,7 +10,8 @@ import os
 app = Flask(__name__)
 
 # Configuração da conexão WebRTC
-conn = Go2WebRTCConnection(WebRTCConnectionMethod.LocalAP)
+# conn = Go2WebRTCConnection(WebRTCConnectionMethod.LocalAP)
+conn = Go2WebRTCConnection(WebRTCConnectionMethod.Remote, serialNumber="B42D4000O49AKA06", username="andre@glededu.com", password="Gie2309$")
 
 # Loop de eventos do asyncio
 loop = asyncio.new_event_loop()

@@ -9,6 +9,8 @@ import json
 
 # Configuração da conexão WebRTC
 conn = Go2WebRTCConnection(WebRTCConnectionMethod.LocalAP)
+#conn = Go2WebRTCConnection(WebRTCConnectionMethod.Remote, serialNumber="B42D2000XXXXXXXX", username="email@gmail.com", password="pass")
+
 
 # Inicializar suporte ao joystick
 pygame.init()
